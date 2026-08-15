@@ -1,20 +1,40 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
-import { connect } from "@tursodatabase/sync";
-import { and, desc, eq, gt, sql } from "drizzle-orm";
+import { connect, type Database } from "@tursodatabase/sync";
+import { and, desc, eq, gt, lt, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/tursodatabase-sync";
 import { Configuration, Environment } from "#soundy/config";
 import type { GuildPlayerSettings, ISetup } from "#soundy/types";
+import { pinoLogger } from "#soundy/utils";
 import * as schema from "./schema";
 
 if (!existsSync("./data")) {
 	mkdirSync("./data", { recursive: true });
 }
 
-import type { Database } from "@tursodatabase/sync";
-
 export let client: Database;
 export let db: ReturnType<typeof drizzle>;
+
+export async function cleanOldStats() {
+	try {
+		if (!db) return;
+		pinoLogger.info(
+			"[Database] Cleaning up old statistics (>30 days) & expired votes...",
+		);
+		await db
+			.delete(schema.trackStats)
+			.where(
+				lt(schema.trackStats.lastPlayed, sql`datetime('now', '-30 days')`),
+			);
+		await db
+			.delete(schema.userVote)
+			.where(lt(schema.userVote.expiresAt, sql`datetime('now')`));
+		await client?.checkpoint?.();
+		pinoLogger.info("[Database] Auto-pruning completed.");
+	} catch (error) {
+		pinoLogger.error(error, "[Database] Auto-cleanup failed");
+	}
+}
 
 export async function initDatabase() {
 	if (client) return;
@@ -27,24 +47,57 @@ export async function initDatabase() {
 	});
 
 	try {
-		console.log(
+		pinoLogger.info(
 			"[Database] Performing initial pull from remote Turso database...",
 		);
 		await client.pull();
+		await client.checkpoint();
 	} catch (error) {
-		console.error("[Database] Initial pull failed:", error);
+		pinoLogger.error(error, "[Database] Initial pull failed");
 	}
 
 	setInterval(async () => {
 		try {
 			await client.push();
 			await client.pull();
+			await client.checkpoint();
 		} catch (error) {
-			console.error("[Database] Background sync failed:", error);
+			pinoLogger.error(error, "[Database] Background sync failed");
 		}
 	}, 60000);
 
 	db = drizzle({ client });
+
+	// Trigger initial cleanup and schedule daily pruning (every 24h)
+	await cleanOldStats();
+	setInterval(
+		() => {
+			cleanOldStats();
+		},
+		24 * 60 * 60 * 1000,
+	);
+}
+
+export async function withRetry<T>(
+	fn: () => Promise<T>,
+	retries = 3,
+	delayMs = 500,
+): Promise<T> {
+	let lastError: unknown;
+	for (let i = 0; i < retries; i++) {
+		try {
+			return await fn();
+		} catch (err) {
+			lastError = err;
+			pinoLogger.warn(
+				`[Database] Query failed (attempt ${i + 1}/${retries}): ${err}`,
+			);
+			if (i < retries - 1) {
+				await new Promise((res) => setTimeout(res, delayMs * 2 ** i));
+			}
+		}
+	}
+	throw lastError;
 }
 
 export class SoundyDatabase {
@@ -1228,7 +1281,7 @@ export class SoundyDatabase {
 			length: track.length || undefined,
 			isStream: !!track.isStream,
 			playedAt: track.lastPlayed || new Date().toISOString(),
-			guildId: track.guildId,
+			guildId: track.guildId ?? "",
 		}));
 	}
 
@@ -1399,8 +1452,8 @@ export class SoundyDatabase {
 				title: track.title,
 				author: track.author,
 				uri: track.uri,
-				artwork: track.artwork,
-				length: track.length,
+				artwork: track.artwork ?? null,
+				length: track.length ?? null,
 				isStream: !!track.isStream,
 				likedAt: track.likedAt || new Date().toISOString(),
 			}));

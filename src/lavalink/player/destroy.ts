@@ -1,4 +1,5 @@
 import type { Player } from "lavalink-client";
+import { broadcastPlayerDisconnection } from "#soundy/api";
 import { LavalinkEventTypes } from "#soundy/types";
 import { createLavalinkEvent, PlayerSaver } from "#soundy/utils";
 
@@ -6,9 +7,11 @@ export default createLavalinkEvent({
 	name: "playerDestroy",
 	type: LavalinkEventTypes.Manager,
 	async run(client, player: Player) {
-		const voice = await client.channels.fetch(
-			player.voiceChannelId ?? player.options.voiceChannelId,
-		);
+		const voiceChannelId =
+			player.voiceChannelId ?? player.options.voiceChannelId;
+		const voice = voiceChannelId
+			? await client.channels.fetch(voiceChannelId).catch(() => null)
+			: null;
 		if (voice?.is(["GuildVoice"])) {
 			// Check if voice status is enabled for this guild
 			const voiceStatusEnabled = await client.database.getVoiceStatus(
@@ -100,5 +103,7 @@ export default createLavalinkEvent({
 		player.deleteData("lyricsRequester");
 
 		await playerSaver.clearLyricsData(player.guildId);
+
+		broadcastPlayerDisconnection(player.guildId);
 	},
 });

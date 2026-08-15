@@ -8,10 +8,22 @@ export const handleLoadPlaylist: WSHandler = async (ws, msg, client) => {
 		msg.userId &&
 		msg.voiceChannelId
 	) {
-		const { guildId } = msg;
 		const userId = String(msg.userId);
 		const playlistId = String(msg.playlistId);
-		const voiceChannelId = String(msg.voiceChannelId);
+		let guildId = String(msg.guildId);
+		let voiceChannelId = String(msg.voiceChannelId);
+
+		// Resolve actual current voice channel from Discord cache
+		const allGuilds = Array.from(client.cache.guilds?.values() ?? []);
+		for (const guild of allGuilds) {
+			const gId = (guild as { id: string }).id;
+			const voiceState = client.cache.voiceStates?.get(userId, gId);
+			if (voiceState?.channelId) {
+				guildId = gId;
+				voiceChannelId = voiceState.channelId;
+				break;
+			}
+		}
 
 		if (!voiceChannelId.trim()) {
 			ws.send(
@@ -62,6 +74,14 @@ export const handleLoadPlaylist: WSHandler = async (ws, msg, client) => {
 					selfDeaf: true,
 				});
 				await player.connect();
+			} else {
+				if (player.voiceChannelId !== voiceChannelId) {
+					player.options.voiceChannelId = voiceChannelId;
+					player.voiceChannelId = voiceChannelId;
+					await player.connect();
+				} else if (!player.connected) {
+					await player.connect();
+				}
 			}
 
 			let addedCount = 0;

@@ -129,7 +129,7 @@ For bot administrators and users:
 
 **Need Help with Security?**
 
-[🎮 Discord Server](https://discord.gg/pTbFUFdppU) • [📧 Email Support](mailto:kiyomi@mjba.my) • [📋 Documentation](https://github.com/idMJA/Soundy/wiki)
+[🎮 Discord Server](https://discord.gg/pTbFUFdppU) • [📧 Email Support](mailto:kiyomi@mja.moe) • [📋 Documentation](https://github.com/idMJA/Soundy/wiki)
 
 ---
 

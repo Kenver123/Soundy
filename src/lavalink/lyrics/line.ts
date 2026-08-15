@@ -54,32 +54,42 @@ export default createLavalinkEvent({
 			const lines: string = lyrics.lines
 				.slice(start, end)
 				.map((l, i): string => {
-					if (!l.line.length) l.line = "...";
-					return i + start === index ? `**${l.line}**` : `-# ${l.line}`;
+					const lineText =
+						l.line && l.line.length > 200
+							? l.line.slice(0, 200)
+							: l.line || "...";
+					return i + start === index ? `**${lineText}**` : `-# ${lineText}`;
 				})
 				.join("\n");
+
+			const titleText = (track?.info.title ?? "Unknown Title").slice(0, 50);
+			const authorText = (track?.info.author ?? "Unknown Author").slice(0, 50);
+			const providerText = (lyrics.provider ?? "Unknown").slice(0, 30);
+			const requesterText = (
+				player.getData<string>("lyricsRequester") || "Unknown"
+			).slice(0, 50);
 
 			const components = new Container().addComponents(
 				new Section()
 					.setAccessory(
 						new Thumbnail()
 							.setMedia(track?.info.artworkUrl ?? "")
-							.setDescription(`${track?.info.title} - ${track?.info.author}`),
+							.setDescription(`${titleText} - ${authorText}`),
 					)
 					.addComponents(
 						new TextDisplay().setContent(
 							`# ${String(
 								component.lyrics.title({
-									song: track?.info.title ?? "Unknown Title",
+									song: titleText,
 								}),
-							)}\n\n${lines}\n\n-# ${String(cmd.powered_by({ provider: lyrics.provider }))}`,
+							)}\n\n${lines}\n\n-# ${String(cmd.powered_by({ provider: providerText }))}`,
 						),
 					),
 				new Separator(),
 				new Section()
 					.addComponents(
 						new TextDisplay().setContent(
-							`-# ${String(cmd.requested_by({ user: player.getData<string>("lyricsRequester") || "Unknown" }))}`,
+							`-# ${String(cmd.requested_by({ user: requesterText }))}`,
 						),
 					)
 					.setAccessory(
@@ -90,10 +100,12 @@ export default createLavalinkEvent({
 					),
 			);
 
-			await message.edit({
-				components: [components],
-				flags: MessageFlags.IsComponentsV2,
-			});
+			await message
+				.edit({
+					components: [components],
+					flags: MessageFlags.IsComponentsV2,
+				})
+				.catch(() => null);
 		}
 	},
 });

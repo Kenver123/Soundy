@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { openapi } from "@elysiajs/openapi";
 import { Elysia } from "elysia";
 import type { UsingClient } from "seyfert";
@@ -10,10 +11,12 @@ import {
 import { BOT_VERSION, PlayerSaver, sendVoteWebhook } from "#soundy/utils";
 
 interface VoteWebhookPayload {
-	user: string;
-	type: "upvote" | "test";
+	user?: string;
+	user_id?: string;
+	platform_id?: string;
+	type?: "upvote" | "test" | "vote.create" | "webhook.test";
 	query?: string;
-	isWeekend: boolean;
+	isWeekend?: boolean;
 }
 
 interface ServerResponse {
@@ -43,54 +46,152 @@ interface StatsResponse {
 	timestamp: string;
 }
 
+interface ElysiaHandlerContext {
+	body?: unknown;
+	headers: Record<string, string | undefined>;
+	set: { status?: number | string };
+}
+
+interface ElysiaGetContext {
+	set: { status?: number | string };
+}
+
+const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+
 export function APIServer(client: UsingClient): void {
-	const app = new Elysia().use(
-		openapi({
-			path: "/docs",
-			documentation: {
-				info: {
-					title: "Soundy API Documentation",
-					version: BOT_VERSION,
-					description:
-						"REST API for Soundy Discord Music Bot - Control music playback, manage playlists, and monitor server statistics",
-				},
-				tags: [
-					{ name: "Music", description: "Music playback endpoints" },
-					{ name: "Playlist", description: "Playlist management endpoints" },
-					{ name: "Statistics", description: "Bot statistics and monitoring" },
-					{
-						name: "Webhooks",
-						description: "Webhook endpoints for integrations",
+	const app = new Elysia()
+		.onRequest(({ request, set }): unknown => {
+			const ip =
+				request.headers.get("x-forwarded-for") ||
+				request.headers.get("x-real-ip") ||
+				"global";
+			const now = Date.now();
+			const windowMs = 60000;
+			const maxRequests = 100;
+
+			const entry = rateLimitStore.get(ip);
+			if (!entry || now > entry.resetAt) {
+				rateLimitStore.set(ip, { count: 1, resetAt: now + windowMs });
+				return;
+			}
+
+			entry.count++;
+			if (entry.count > maxRequests) {
+				set.status = 429;
+				return { error: "Too Many Requests. Please try again later." };
+			}
+			return;
+		})
+		.use(
+			openapi({
+				path: "/docs",
+				documentation: {
+					info: {
+						title: "Soundy API Documentation",
+						version: BOT_VERSION,
+						description:
+							"REST & WebSocket API for Soundy Discord Music Bot - Control music playback, manage playlists, access public bot stats, and handle bot webhooks.",
 					},
-				],
-			},
-		}),
-	);
+					tags: [
+						{
+							name: "Dashboard - Music",
+							description:
+								"Music playback and player control endpoints for Dashboard",
+						},
+						{
+							name: "Dashboard - Playlist",
+							description: "User playlist management endpoints for Dashboard",
+						},
+						{
+							name: "Dashboard - Top Charts",
+							description:
+								"Top played tracks, users, and guild charts for Dashboard",
+						},
+						{
+							name: "Public Stats",
+							description:
+								"Publicly accessible bot statistics and server listings",
+						},
+						{
+							name: "Webhooks (Internal)",
+							description:
+								"Internal webhook endpoints (e.g. top.gg vote processor)",
+						},
+					],
+				},
+			}),
+		);
 
 	const playerSaver = new PlayerSaver(client.logger);
 
-	applyAPIRoutes(app, client);
+	applyAPIRoutes(app as unknown as Elysia, client);
 
 	Object.assign(app, { client });
 
-	setupSoundyWebSocket(app as ElysiaApp, client, playerSaver);
+	setupSoundyWebSocket(app as unknown as ElysiaApp, client, playerSaver);
 
-	setGlobalAppInstance(app as ElysiaApp);
+	setGlobalAppInstance(app as unknown as ElysiaApp);
 
 	app
 		.post(
 			"/vote",
-			async ({ body, set }) => {
-				const vote = body as VoteWebhookPayload;
+			async ({ body, headers, set }: ElysiaHandlerContext) => {
+				const secret = client.config.topgg.webhookAuth;
 
-				// Validate required fields
-				if (!vote.user) {
+				if (secret) {
+					const signature =
+						(headers["x-topgg-signature"] as string | undefined) ||
+						(headers["x-signature"] as string | undefined);
+					const authHeader = headers.authorization;
+
+					let isValid = false;
+
+					// Top.gg v1 HMAC SHA-256 Signature Verification
+					if (signature) {
+						const rawPayload =
+							typeof body === "string" ? body : JSON.stringify(body);
+						const expectedSignature = crypto
+							.createHmac("sha256", secret)
+							.update(rawPayload)
+							.digest("hex");
+
+						if (
+							crypto.timingSafeEqual(
+								Buffer.from(signature),
+								Buffer.from(expectedSignature),
+							)
+						) {
+							isValid = true;
+						}
+					}
+
+					// Fallback to legacy v0 Authorization header check
+					if (!isValid && authHeader && authHeader === secret) {
+						isValid = true;
+					}
+
+					if (!isValid) {
+						client.logger.warn(
+							"[Vote] Unauthorized vote webhook attempt detected",
+						);
+						set.status = 401;
+						return {
+							error: "Unauthorized: Invalid webhook signature or token",
+						};
+					}
+				}
+
+				const vote = body as VoteWebhookPayload;
+				const userId = vote.user_id || vote.platform_id || vote.user;
+
+				// Validate required user ID field
+				if (!userId) {
 					set.status = 400;
-					return { error: "Missing user field" };
+					return { error: "Missing user ID in vote payload" };
 				}
 
 				try {
-					const voter = await client.users.fetch(vote.user);
+					const voter = await client.users.fetch(userId);
 					if (!voter) {
 						set.status = 404;
 						return { error: "User not found" };
@@ -139,13 +240,13 @@ export function APIServer(client: UsingClient): void {
 				detail: {
 					summary: "Process vote webhook",
 					description: "Webhook endpoint for processing user votes from top.gg",
-					tags: ["Webhooks"],
+					tags: ["Webhooks (Internal)"],
 				},
 			},
 		)
 		.get(
 			"/stats",
-			async ({ set }) => {
+			async ({ set }: ElysiaGetContext) => {
 				try {
 					const shardStats: StatsResponse["shards"] = [];
 					let totalGuilds = 0;
@@ -164,8 +265,13 @@ export function APIServer(client: UsingClient): void {
 					totalUsers = userCount;
 					totalVoiceConnections = voiceConnections;
 
+					const shardId =
+						(client as { shardId?: number }).shardId ??
+						(client as { gateway?: { shardId?: number } }).gateway?.shardId ??
+						0;
+
 					shardStats.push({
-						id: 0, // TODO: Get shard id
+						id: shardId,
 						guilds: guildCount,
 						channels: channelCount,
 						users: userCount,
@@ -195,13 +301,13 @@ export function APIServer(client: UsingClient): void {
 					summary: "Get bot statistics",
 					description:
 						"Retrieve comprehensive statistics about the bot including guilds, channels, users, and voice connections per shard",
-					tags: ["Statistics"],
+					tags: ["Public Stats"],
 				},
 			},
 		)
 		.get(
 			"/servers",
-			async ({ set }) => {
+			async ({ set }: ElysiaGetContext) => {
 				try {
 					const guilds = Array.from(client.cache.guilds?.values() ?? []);
 					const topGuilds: ServerResponse[] = guilds
@@ -229,7 +335,7 @@ export function APIServer(client: UsingClient): void {
 					summary: "Get top servers",
 					description:
 						"Retrieve the top 10 servers by member count where the bot is present",
-					tags: ["Statistics"],
+					tags: ["Public Stats"],
 				},
 			},
 		);

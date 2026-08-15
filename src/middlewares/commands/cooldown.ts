@@ -3,13 +3,13 @@ import { MessageFlags } from "seyfert/lib/types";
 import { getCollectionKey } from "#soundy/utils";
 
 export const checkCooldown = createMiddleware<void>(
-	async ({ context, next, pass }) => {
+	async ({ context, next, stop }) => {
 		const { client, command } = context;
 		const { cooldowns } = client;
 
 		const { event } = await context.getLocale();
 
-		if (!command) return pass();
+		if (!command) return stop();
 		if ("onlyDeveloper" in command && command.onlyDeveloper) return next();
 
 		const cooldown =
@@ -32,7 +32,7 @@ export const checkCooldown = createMiddleware<void>(
 				],
 			});
 
-			return pass();
+			return stop();
 		}
 
 		cooldowns.set(getCollectionKey(context), timeNow + cooldown, cooldown);

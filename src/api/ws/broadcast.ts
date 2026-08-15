@@ -1,9 +1,9 @@
 import type { Player } from "lavalink-client";
-import type { ElysiaApp } from "#soundy/api";
+import type { UsingClient } from "seyfert";
+import type { ElysiaApp, SoundyWS } from "#soundy/api";
 import { serializePlayerState } from "./types";
 
 let globalAppInstance: ElysiaApp | null = null;
-let updateInterval: NodeJS.Timeout | null = null;
 
 function getWsClients(app: ElysiaApp) {
 	const server = app.server;
@@ -17,39 +17,9 @@ function getWsClients(app: ElysiaApp) {
 
 export function setGlobalAppInstance(app: ElysiaApp): void {
 	globalAppInstance = app;
-	startAutoUpdate();
 }
 
-function startAutoUpdate() {
-	if (updateInterval) {
-		clearInterval(updateInterval);
-	}
-
-	updateInterval = setInterval(() => {
-		if (!globalAppInstance) return;
-
-		const clients = getWsClients(globalAppInstance);
-		if (!clients || clients.size === 0) return;
-
-		const client = globalAppInstance.client;
-		if (!client?.manager?.players) return;
-
-		for (const player of client.manager.players.values()) {
-			if (player.connected) {
-				broadcastPlayerStatus(player.guildId, player, globalAppInstance);
-			}
-		}
-	}, 50);
-}
-
-export function stopAutoUpdate() {
-	if (updateInterval) {
-		clearInterval(updateInterval);
-		updateInterval = null;
-	}
-}
-
-function broadcastPlayerStatus(
+async function broadcastPlayerStatus(
 	guildId: string,
 	player: Player,
 	app: ElysiaApp,
@@ -60,7 +30,7 @@ function broadcastPlayerStatus(
 	const statusMsg = JSON.stringify({
 		type: "status",
 		guildId,
-		...serializePlayerState(player),
+		...(await serializePlayerState(player)),
 		queue: player.queue.tracks.map((track, index: number) => ({
 			index,
 			title: track.info.title || "Unknown",
@@ -114,7 +84,7 @@ export function broadcastPlayerUpdate(guildId: string, player: Player) {
 	}
 }
 
-export function broadcastPlayerEvent(
+export async function broadcastPlayerEvent(
 	guildId: string,
 	player: Player,
 	eventType: string,
@@ -129,7 +99,7 @@ export function broadcastPlayerEvent(
 		type: "player-event",
 		eventType,
 		guildId,
-		...serializePlayerState(player),
+		...(await serializePlayerState(player)),
 		eventData,
 		timestamp: Date.now(),
 	});
@@ -164,6 +134,54 @@ export function broadcastPlayerDisconnection(guildId: string) {
 	for (const client of clients) {
 		if (client.readyState === 1) {
 			client.send(disconnectionMsg);
+		}
+	}
+}
+
+export function broadcastUserVoiceStateUpdate(
+	client: UsingClient,
+	userId: string,
+	_guildId: string | null,
+	_voiceChannelId: string | null,
+) {
+	if (!globalAppInstance) return;
+
+	const clients = getWsClients(globalAppInstance);
+	if (!clients || clients.size === 0) return;
+
+	for (const wsClient of clients) {
+		const ws = wsClient as SoundyWS;
+		const clientUserId = ws.data?.userId;
+		if (clientUserId === userId) {
+			const cachedGuilds = Array.from(client.cache.guilds?.values() ?? []);
+			const updatedGuilds = (
+				cachedGuilds as Array<{ id: string; name: string; icon: string | null }>
+			)
+				.filter((g) => {
+					const voiceState = client.cache.voiceStates?.get(userId, g.id);
+					const isMember = client.cache.members?.get(userId, g.id);
+					return Boolean(voiceState?.channelId) || Boolean(isMember);
+				})
+				.map((g) => {
+					const voiceState = client.cache.voiceStates?.get(userId, g.id);
+					return {
+						id: g.id,
+						name: g.name,
+						icon: g.icon,
+						inVoiceChannel: Boolean(voiceState?.channelId),
+					};
+				});
+
+			const updateMsg = JSON.stringify({
+				type: "user-connect",
+				success: true,
+				guilds: updatedGuilds,
+				guildId: ws.data?.guildId,
+				voiceChannelId: ws.data?.voiceChannelId,
+				userId,
+			});
+
+			ws.send(updateMsg);
 		}
 	}
 }

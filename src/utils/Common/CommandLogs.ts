@@ -1,3 +1,4 @@
+import ky from "ky";
 import type { UsingClient } from "seyfert";
 import { Embed } from "seyfert";
 
@@ -60,15 +61,11 @@ export async function sendCommandLog(
 		])
 		.setTimestamp();
 
-	return await fetch(`${client.config.webhooks.commandLog}?wait=true`, {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify({
+	return await ky.post(`${client.config.webhooks.commandLog}?wait=true`, {
+		json: {
 			username: client.me.username,
 			avatar_url: client.me.avatarURL(),
 			embeds: [embed.toJSON()],
-		}),
+		},
 	});
 }

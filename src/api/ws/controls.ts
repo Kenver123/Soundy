@@ -1,5 +1,5 @@
 import type { PlayerSaver } from "#soundy/utils";
-import type { WSHandler } from "./types";
+import { checkVoicePermissions, type WSHandler } from "./types";
 
 export const handleVolume: WSHandler = async (ws, msg, client) => {
 	if (
@@ -7,6 +7,18 @@ export const handleVolume: WSHandler = async (ws, msg, client) => {
 		msg.guildId &&
 		typeof msg.volume === "number"
 	) {
+		const perm = await checkVoicePermissions(ws, msg.guildId, client);
+		if (!perm.allowed) {
+			ws.send(
+				JSON.stringify({
+					type: "set-volume",
+					success: false,
+					message: perm.message,
+				}),
+			);
+			return true;
+		}
+
 		const player = client.manager.getPlayer(msg.guildId);
 		if (player) {
 			await player.setVolume(msg.volume);
@@ -33,6 +45,18 @@ export const handleVolume: WSHandler = async (ws, msg, client) => {
 
 export const handleShuffle: WSHandler = async (ws, msg, client) => {
 	if (msg.type === "shuffle" && msg.guildId) {
+		const perm = await checkVoicePermissions(ws, msg.guildId, client);
+		if (!perm.allowed) {
+			ws.send(
+				JSON.stringify({
+					type: "shuffle",
+					success: false,
+					message: perm.message,
+				}),
+			);
+			return true;
+		}
+
 		const player = client.manager.getPlayer(msg.guildId);
 		if (player) {
 			if (player.queue.tracks.length === 0) {
@@ -71,6 +95,18 @@ export const handleShuffle: WSHandler = async (ws, msg, client) => {
 
 export const handleRepeat: WSHandler = async (ws, msg, client, ...args) => {
 	if (msg.type === "repeat" && msg.guildId) {
+		const perm = await checkVoicePermissions(ws, msg.guildId, client);
+		if (!perm.allowed) {
+			ws.send(
+				JSON.stringify({
+					type: "repeat",
+					success: false,
+					message: perm.message,
+				}),
+			);
+			return true;
+		}
+
 		const playerSaver = args[0] as PlayerSaver | undefined;
 		const player = client.manager.getPlayer(msg.guildId);
 		if (player) {

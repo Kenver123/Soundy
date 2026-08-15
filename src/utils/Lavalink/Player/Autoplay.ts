@@ -1,4 +1,4 @@
-import axios from "axios";
+import ky from "ky";
 import type { Player, Track, UnresolvedTrack } from "lavalink-client";
 import type { ClientUser } from "seyfert";
 
@@ -180,19 +180,16 @@ async function handleLastFmRecommendations(
 			return;
 		}
 		const url = `https://ws.audioscrobbler.com/2.0/?method=track.getSimilar&artist=${encodeURIComponent(author)}&track=${encodeURIComponent(title)}&limit=10&autocorrect=1&api_key=${apiKey}&format=json`;
-		const response = await axios.get<LastFmSimilarResponse>(url);
+		const data = await ky.get(url).json<LastFmSimilarResponse>();
 
-		if (
-			!response.data?.similartracks?.track ||
-			response.data.similartracks.track.length === 0
-		) {
+		if (!data?.similartracks?.track || data.similartracks.track.length === 0) {
 			// Fallback to Spotify if Last.fm returns empty track array
 			await handleSpotifyRecommendations(player, lastTrack, me);
 			return;
 		}
 
 		// Process similar tracks from Last.fm
-		const tracks = response.data.similartracks.track;
+		const tracks = data.similartracks.track;
 		// Filter out tracks that would exceed artist limit
 		const eligibleTracks = tracks.filter(
 			(track) => !wouldExceedArtistLimit(player, track.artist.name),

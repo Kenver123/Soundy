@@ -4,6 +4,7 @@ import type { PlayerData } from "#soundy/types";
 
 export interface SoundyWS {
 	send: (data: string) => void;
+	close?: () => void;
 	/**
 	 * Elysia >=1.4.19 exposes `ws.data` for per-connection state.
 	 * Keep `store` for backward compatibility with pre-1.4.19 code.

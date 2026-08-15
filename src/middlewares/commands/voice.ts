@@ -5,16 +5,16 @@ import { MessageFlags } from "seyfert/lib/types";
  * Check if the bot is in a voice channel and if is the same as the author.
  */
 export const checkBotVoiceChannel = createMiddleware<void>(
-	async ({ context, pass, next }) => {
+	async ({ context, stop, next }) => {
 		try {
 			const me = await context.me();
-			if (!me) return pass();
+			if (!me) return stop();
 
 			const state = context.client.cache.voiceStates?.get(
 				context.author.id,
 				context.guildId ?? "",
 			);
-			if (!state) return pass();
+			if (!state) return stop();
 
 			const { event } = await context.getLocale();
 			const config = context.client.config;
@@ -35,13 +35,13 @@ export const checkBotVoiceChannel = createMiddleware<void>(
 					],
 				});
 
-				return pass();
+				return stop();
 			}
 
 			return next();
 		} catch (error) {
 			context.client.logger.error(`[Middleware checkBotVoiceChannel] ${error}`);
-			return pass();
+			return stop();
 		}
 	},
 );
@@ -50,18 +50,20 @@ export const checkBotVoiceChannel = createMiddleware<void>(
  * Check if the author is in a voice channel.
  */
 export const checkVoiceChannel = createMiddleware<void>(
-	async ({ context, pass, next }) => {
+	async ({ context, stop, next }) => {
 		try {
+			const me = await context.me();
+			if (!me) return stop();
+
 			const state = context.client.cache.voiceStates?.get(
 				context.author.id,
 				context.guildId ?? "",
 			);
-			const channel = await state?.channel().catch(() => null);
 
 			const { event } = await context.getLocale();
 			const config = context.client.config;
 
-			if (!channel?.is(["GuildVoice", "GuildStageVoice"])) {
+			if (!state) {
 				await context.editOrReply({
 					flags: MessageFlags.Ephemeral,
 					embeds: [
@@ -72,13 +74,54 @@ export const checkVoiceChannel = createMiddleware<void>(
 					],
 				});
 
-				return pass();
+				return stop();
 			}
 
 			return next();
 		} catch (error) {
 			context.client.logger.error(`[Middleware checkVoiceChannel] ${error}`);
-			return pass();
+			return stop();
+		}
+	},
+);
+
+/**
+ * Check if the bot is in a voice channel.
+ */
+export const checkBotInVoiceChannel = createMiddleware<void>(
+	async ({ context, stop, next }) => {
+		try {
+			const me = await context.me();
+			if (!me) return stop();
+
+			const { event } = await context.getLocale();
+			const config = context.client.config;
+
+			const bot = context.client.cache.voiceStates?.get(
+				me.id,
+				context.guildId ?? "",
+			);
+
+			if (!bot) {
+				await context.editOrReply({
+					flags: MessageFlags.Ephemeral,
+					embeds: [
+						{
+							description: `${config.emoji.no} ${event.voice.no_vc}`,
+							color: config.color.no,
+						},
+					],
+				});
+
+				return stop();
+			}
+
+			return next();
+		} catch (error) {
+			context.client.logger.error(
+				`[Middleware checkBotInVoiceChannel] ${error}`,
+			);
+			return stop();
 		}
 	},
 );
@@ -87,22 +130,22 @@ export const checkVoiceChannel = createMiddleware<void>(
  * Check if the bot has permissions to join the voice channel.
  */
 export const checkVoicePermissions = createMiddleware<void>(
-	async ({ context, pass, next }) => {
+	async ({ context, stop, next }) => {
 		try {
 			const state = context.client.cache.voiceStates?.get(
 				context.author.id,
 				context.guildId ?? "",
 			);
-			if (!state) return pass();
+			if (!state) return stop();
 
 			const channel = await state.channel().catch(() => null);
-			if (!channel?.is(["GuildVoice", "GuildStageVoice"])) return pass();
+			if (!channel?.is(["GuildVoice", "GuildStageVoice"])) return stop();
 
 			const { stagePermissions, voicePermissions } =
 				context.client.config.permissions;
 
 			const me = await context.me();
-			if (!me) return pass();
+			if (!me) return stop();
 
 			const { event } = await context.getLocale();
 			const config = context.client.config;
@@ -135,7 +178,7 @@ export const checkVoicePermissions = createMiddleware<void>(
 					],
 				});
 
-				return pass();
+				return stop();
 			}
 
 			return next();
@@ -143,7 +186,7 @@ export const checkVoicePermissions = createMiddleware<void>(
 			context.client.logger.error(
 				`[Middleware checkVoicePermissions] ${error}`,
 			);
-			return pass();
+			return stop();
 		}
 	},
 );

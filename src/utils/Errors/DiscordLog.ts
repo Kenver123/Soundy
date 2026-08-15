@@ -1,3 +1,4 @@
+import ky from "ky";
 import { Embed } from "seyfert";
 import type Soundy from "#soundy/client";
 import { Configuration } from "#soundy/config";
@@ -44,15 +45,11 @@ export async function sendErrorLog(
 		.addFields(fields)
 		.setTimestamp();
 
-	return await fetch(`${client.config.webhooks.errorLog}?wait=true`, {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify({
+	return await ky.post(`${client.config.webhooks.errorLog}?wait=true`, {
+		json: {
 			username: "Soundy Error Logger",
 			avatar_url: client.me.avatarURL(),
 			embeds: [embed.toJSON()],
-		}),
+		},
 	});
 }

@@ -1,3 +1,4 @@
+import ky from "ky";
 import { Embed, type User, type UsingClient } from "seyfert";
 
 /**
@@ -38,24 +39,14 @@ export async function sendVoteWebhook(
 			.setFooter({ text: "Thanks for choosing Soundy!" })
 			.setTimestamp();
 
-		const response = await fetch(client.config.webhooks.voteLog, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({
+		await ky.post(client.config.webhooks.voteLog, {
+			json: {
 				username: client.me.name,
 				avatar_url: client.me.avatarURL(),
 				content: `<@${voter.id}>`,
 				embeds: [voteEmbed.toJSON()],
-			}),
+			},
 		});
-
-		if (!response.ok) {
-			throw new Error(
-				`Webhook failed: ${response.status} ${response.statusText}`,
-			);
-		}
 
 		client.logger.info(
 			`[Vote] Webhook sent successfully for ${voter.username} (${voter.id})`,

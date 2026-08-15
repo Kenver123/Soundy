@@ -11,6 +11,9 @@ package-lock.json
 .env.keys
 .env.production
 sessions.json
+.sessions.json.tmp
+*.tmp
+*.tar.gz
 .fuse_*
 data
 

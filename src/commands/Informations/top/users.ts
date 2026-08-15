@@ -37,11 +37,11 @@ export default class TopUsersCommand extends SubCommand {
 			.addFields(
 				await Promise.all(
 					users.map(async (user, index) => {
-						const member = await client.users
-							.fetch(user.userId)
-							.catch(() => null);
+						const member =
+							client.cache.users?.get(user.userId) ??
+							(await client.users.fetch(user.userId).catch(() => null));
 						return {
-							name: `${index + 1}. ${member?.globalName ?? cmd.top.sub.users.run.unknown}`,
+							name: `${index + 1}. ${member?.globalName ?? member?.username ?? cmd.top.sub.users.run.unknown}`,
 							value: cmd.top.sub.users.run.fields({
 								playCount: user.playCount,
 							}),

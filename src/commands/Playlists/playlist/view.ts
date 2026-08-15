@@ -100,25 +100,32 @@ export default class ViewPlaylistCommand extends SubCommand {
 		const pages = Math.ceil(tracks.length / tracksPerPage);
 		const paginator = new EmbedPaginator(ctx);
 
-		const trackDetails = tracks
-			.map((track) => {
-				if (track.info) {
-					return {
-						info:
-							typeof track.info === "string"
-								? JSON.parse(track.info)
-								: track.info,
-					};
-				} else {
-					return null;
-				}
-			})
-			.filter(Boolean);
-
 		for (let page = 0; page < pages; page++) {
 			const start = page * tracksPerPage;
 			const end = start + tracksPerPage;
-			const currentTracks = trackDetails.slice(start, end);
+			const currentRawTracks = tracks.slice(start, end);
+
+			const formattedLines = currentRawTracks.map((track, i) => {
+				if (!track.info)
+					return `${start + i + 1}. ${cmd.playlist.sub.view.run.failed}`;
+
+				const info =
+					typeof track.info === "string" ? JSON.parse(track.info) : track.info;
+				if (!info?.title)
+					return `${start + i + 1}. ${cmd.playlist.sub.view.run.failed}`;
+
+				const duration = info.isStream
+					? "LIVE"
+					: TimeFormat.toDotted(info.length);
+				const title =
+					info.title.length > 45 ? `${info.title.slice(0, 42)}...` : info.title;
+				const author =
+					info.author.length > 35
+						? `${info.author.slice(0, 32)}...`
+						: info.author;
+
+				return `${start + i + 1}. **[${title}](${info.uri})** by \`${author}\`\n┗ \`${duration}\``;
+			});
 
 			const embed = new Embed()
 				.setColor(client.config.color.primary)
@@ -126,26 +133,7 @@ export default class ViewPlaylistCommand extends SubCommand {
 					name: cmd.playlist.sub.view.run.title({ name: playlist.name }),
 					iconUrl: ctx.author.avatarURL(),
 				})
-				.setDescription(
-					currentTracks
-						.map((track, i) => {
-							if (!track?.info)
-								return `${start + i + 1}. ${cmd.playlist.sub.view.run.failed}`;
-							const duration = track.info.isStream
-								? "LIVE"
-								: TimeFormat.toDotted(track.info.length);
-							const title =
-								track.info.title.length > 45
-									? `${track.info.title.slice(0, 42)}...`
-									: track.info.title;
-							const author =
-								track.info.author.length > 35
-									? `${track.info.author.slice(0, 32)}...`
-									: track.info.author;
-							return `${start + i + 1}. **[${title}](${track.info.uri})** by \`${author}\`\n┗ \`${duration}\``;
-						})
-						.join("\n\n"),
-				)
+				.setDescription(formattedLines.join("\n\n"))
 				.setFooter({
 					text: cmd.playlist.run.footer({
 						page: `${page + 1}/${pages}`,

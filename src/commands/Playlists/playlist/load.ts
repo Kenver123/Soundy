@@ -118,10 +118,16 @@ export default class LoadPlaylistCommand extends SubCommand {
 			await player.connect();
 		}
 
-		for (const trackUrl of tracks) {
-			const result = await client.manager.search(trackUrl.url);
-			if (result.tracks[0]) {
-				player.queue.add(result.tracks[0]);
+		const BATCH_SIZE = 10;
+		for (let i = 0; i < tracks.length; i += BATCH_SIZE) {
+			const chunk = tracks.slice(i, i + BATCH_SIZE);
+			const results = await Promise.all(
+				chunk.map((t) => client.manager.search(t.url).catch(() => null)),
+			);
+			for (const result of results) {
+				if (result?.tracks?.[0]) {
+					player.queue.add(result.tracks[0]);
+				}
 			}
 		}
 

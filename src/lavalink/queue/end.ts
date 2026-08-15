@@ -1,3 +1,4 @@
+import { broadcastPlayerUpdate } from "#soundy/api";
 import { LavalinkEventTypes } from "#soundy/types";
 import {
 	createLavalinkEvent,
@@ -11,8 +12,10 @@ export default createLavalinkEvent({
 	async run(client, player) {
 		if (!player.textChannelId || !player.voiceChannelId) return;
 
-		const voice = await client.channels.fetch(player.voiceChannelId);
-		if (!voice.is(["GuildStageVoice", "GuildVoice"])) return;
+		const voice = await client.channels
+			.fetch(player.voiceChannelId)
+			.catch(() => null);
+		if (!voice?.is(["GuildStageVoice", "GuildVoice"])) return;
 
 		if (voice.is(["GuildVoice"])) {
 			const voiceStatusEnabled = await client.database.getVoiceStatus(
@@ -142,5 +145,7 @@ export default createLavalinkEvent({
 				player.deleteData("disconnectTimeout");
 			}
 		}
+
+		broadcastPlayerUpdate(player.guildId, player);
 	},
 });

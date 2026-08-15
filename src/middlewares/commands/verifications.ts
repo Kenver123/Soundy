@@ -2,7 +2,7 @@ import { createMiddleware } from "seyfert";
 import { MessageFlags } from "seyfert/lib/types";
 
 export const checkVerifications = createMiddleware<void>(
-	async ({ context, next, pass }) => {
+	async ({ context, next, stop }) => {
 		const { client, author, member, command } = context;
 		const { developersIds } = client.config;
 
@@ -10,7 +10,7 @@ export const checkVerifications = createMiddleware<void>(
 
 		const guild = await context.guild();
 
-		if (!(member && command && guild)) return pass();
+		if (!(member && command && guild)) return stop();
 
 		if (
 			"onlyDeveloper" in command &&
@@ -27,7 +27,7 @@ export const checkVerifications = createMiddleware<void>(
 				],
 			});
 
-			return pass();
+			return stop();
 		}
 
 		if (
@@ -45,7 +45,7 @@ export const checkVerifications = createMiddleware<void>(
 				],
 			});
 
-			return pass();
+			return stop();
 		}
 
 		// Only run cooldown for commands, skip for components

@@ -81,15 +81,25 @@ const option = {
 					>;
 				}
 				return interaction.respond(
-					filteredTracks.slice(0, 10).map((track) => {
-						const duration = track.info.isStream
-							? "LIVE"
-							: (TimeFormat.toDotted(track.info.duration) ?? "Unknown");
-						return {
-							name: `${track.info.title.slice(0, 20)} (${duration}) - ${track.info.author.slice(0, 30)}`,
-							value: track.info.uri ?? "",
-						};
-					}),
+					filteredTracks
+						.filter((t) => Boolean(t?.info?.title && t?.info?.uri))
+						.slice(0, 10)
+						.map((track) => {
+							const duration = track.info.isStream
+								? "LIVE"
+								: (TimeFormat.toDotted(track.info.duration) ?? "Unknown");
+							const title = track.info.title || "Track";
+							const author = track.info.author || "Artist";
+							const name =
+								`${title.slice(0, 40)} (${duration}) - ${author.slice(0, 30)}`.slice(
+									0,
+									100,
+								);
+							return {
+								name: name || "Track",
+								value: (track.info.uri || track.info.title).slice(0, 100),
+							};
+						}),
 				);
 			}
 			const { tracks } = await client.manager.search(
@@ -101,15 +111,25 @@ const option = {
 					{ name: "No tracks found", value: "noTracks" },
 				]);
 			await interaction.respond(
-				tracks.slice(0, 25).map((track) => {
-					const duration = track.info.isStream
-						? "LIVE"
-						: (TimeFormat.toDotted(track.info.duration) ?? "Unknown");
-					return {
-						name: `${track.info.title.slice(0, 20)} (${duration}) - ${track.info.author.slice(0, 30)}`,
-						value: track.info.uri ?? "",
-					};
-				}),
+				tracks
+					.filter((t) => Boolean(t?.info?.title && t?.info?.uri))
+					.slice(0, 25)
+					.map((track) => {
+						const duration = track.info.isStream
+							? "LIVE"
+							: (TimeFormat.toDotted(track.info.duration) ?? "Unknown");
+						const title = track.info.title || "Track";
+						const author = track.info.author || "Artist";
+						const name =
+							`${title.slice(0, 40)} (${duration}) - ${author.slice(0, 30)}`.slice(
+								0,
+								100,
+							);
+						return {
+							name: name || "Track",
+							value: (track.info.uri || track.info.title).slice(0, 100),
+						};
+					}),
 			);
 		},
 	}),

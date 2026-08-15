@@ -1,5 +1,3 @@
-import type { LavalinkManager } from "lavalink-client";
-import type { ParseClient, ParseLocales, ParseMiddlewares } from "seyfert";
 import type { SoundyMiddlewares } from "#soundy/middlewares";
 import type { Options } from "#soundy/types";
 import type { SoundyContext } from "#soundy/utils";
@@ -14,15 +12,13 @@ declare module "seyfert" {
 	interface ContextMenuCommand extends Options {}
 	interface EntryPointCommand extends Options {}
 
-	interface UsingClient extends ParseClient<Soundy> {}
 	interface ExtendContext extends ReturnType<typeof SoundyContext> {}
-	interface RegisteredMiddlewares
-		extends ParseMiddlewares<typeof SoundyMiddlewares> {}
-	interface GlobalMetadata extends ParseMiddlewares<typeof SoundyMiddlewares> {}
-	interface DefaultLocale extends ParseLocales<typeof English> {}
 
-	interface Client {
-		lavalink: LavalinkManager;
+	interface SeyfertRegistry {
+		client: Soundy;
+		context: ReturnType<typeof SoundyContext>;
+		middlewares: typeof SoundyMiddlewares;
+		langs: typeof English;
 	}
 
 	interface ExtendedRCLocations {

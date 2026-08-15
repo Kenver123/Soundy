@@ -144,6 +144,8 @@ export default class LyricsCommand extends Command {
 		const { guildId, client } = ctx;
 		if (!guildId) return;
 
+		await ctx.deferReply().catch(() => null);
+
 		const { cmd, component } = await ctx.getLocale();
 
 		const player = client.manager.players.get(guildId);
@@ -313,24 +315,24 @@ export default class LyricsCommand extends Command {
 		const firstEmbed = new Embed()
 			.setColor(client.config.color.primary)
 			.setTitle(
-				`${client.config.emoji.list} ${component.lyrics.title({ song: songTitle })}`,
+				`${client.config.emoji.list} ${component.lyrics.title({ song: songTitle.slice(0, 100) })}`,
 			)
 			.setDescription(lyricsChunks[0] || "")
 			.setFooter({
-				text: `${cmd.requested_by({ user: ctx.author.username })} • ${cmd.powered_by({ provider: lyricsProvider })}${isSynced ? " (Synced)" : ""}`,
+				text: `${cmd.requested_by({ user: ctx.author.username.slice(0, 50) })} • ${cmd.powered_by({ provider: lyricsProvider })}${isSynced ? " (Synced)" : ""}`,
 				iconUrl: ctx.author.avatarURL(),
 			});
 
 		if (songUrl) firstEmbed.setURL(songUrl ?? undefined);
 		if (songThumbnail) firstEmbed.setThumbnail(songThumbnail ?? undefined);
 
-		await ctx.editOrReply({ embeds: [firstEmbed] });
+		await ctx.editOrReply({ embeds: [firstEmbed] }).catch(() => null);
 
 		for (let i = 1; i < lyricsChunks.length; i++) {
 			const embed = new Embed()
 				.setColor(client.config.color.primary)
 				.setDescription(lyricsChunks[i] || "");
-			await ctx.editOrReply({ embeds: [embed] });
+			await ctx.editOrReply({ embeds: [embed] }).catch(() => null);
 		}
 	}
 
@@ -340,15 +342,16 @@ export default class LyricsCommand extends Command {
 
 		const lines = lyrics.split("\n");
 		for (const line of lines) {
-			if (currentChunk.length + line.length + 1 > 4000) {
+			const safeLine = line.length > 3000 ? line.slice(0, 3000) : line;
+			if (currentChunk.length + safeLine.length + 1 > 3900) {
 				chunks.push(currentChunk);
-				currentChunk = line;
+				currentChunk = safeLine;
 			} else {
-				currentChunk += (currentChunk ? "\n" : "") + line;
+				currentChunk += (currentChunk ? "\n" : "") + safeLine;
 			}
 		}
 		if (currentChunk) {
-			chunks.push(currentChunk);
+			chunks.push(currentChunk.slice(0, 3900));
 		}
 		return chunks;
 	}

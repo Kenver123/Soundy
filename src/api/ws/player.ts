@@ -1,11 +1,18 @@
-import { serializePlayerState, type WSHandler } from "./types";
+import {
+	checkVoicePermissions,
+	serializePlayerState,
+	type WSHandler,
+} from "./types";
 
 export const handleStatus: WSHandler = async (ws, msg, client) => {
 	if (msg.type === "status" && msg.guildId) {
 		const player = client.manager.getPlayer(msg.guildId);
 		if (player) {
 			ws.send(
-				JSON.stringify({ type: "status", ...serializePlayerState(player) }),
+				JSON.stringify({
+					type: "status",
+					...(await serializePlayerState(player, client)),
+				}),
 			);
 		} else {
 			ws.send(JSON.stringify({ type: "status", connected: false }));
@@ -17,11 +24,20 @@ export const handleStatus: WSHandler = async (ws, msg, client) => {
 
 export const handlePause: WSHandler = async (ws, msg, client) => {
 	if (msg.type === "pause" && msg.guildId) {
+		const perm = await checkVoicePermissions(ws, msg.guildId, client);
+		if (!perm.allowed) {
+			ws.send(JSON.stringify({ type: "error", message: perm.message }));
+			return true;
+		}
+
 		const player = client.manager.getPlayer(msg.guildId);
 		if (player && !player.paused) {
 			await player.pause();
 			ws.send(
-				JSON.stringify({ type: "paused", ...serializePlayerState(player) }),
+				JSON.stringify({
+					type: "paused",
+					...(await serializePlayerState(player, client)),
+				}),
 			);
 		} else {
 			ws.send(
@@ -38,13 +54,18 @@ export const handlePause: WSHandler = async (ws, msg, client) => {
 
 export const handleResume: WSHandler = async (ws, msg, client) => {
 	if (msg.type === "resume" && msg.guildId) {
+		const perm = await checkVoicePermissions(ws, msg.guildId, client);
+		if (!perm.allowed) {
+			ws.send(JSON.stringify({ type: "error", message: perm.message }));
+			return true;
+		}
 		const player = client.manager.getPlayer(msg.guildId);
 		if (player?.paused) {
 			await player.resume();
 			ws.send(
 				JSON.stringify({
 					type: "resumed",
-					...serializePlayerState(player),
+					...(await serializePlayerState(player, client)),
 				}),
 			);
 		} else {
@@ -62,6 +83,14 @@ export const handleResume: WSHandler = async (ws, msg, client) => {
 
 export const handleSkip: WSHandler = async (ws, msg, client) => {
 	if (msg.type === "skip" && msg.guildId) {
+		const perm = await checkVoicePermissions(ws, msg.guildId, client);
+		if (!perm.allowed) {
+			ws.send(
+				JSON.stringify({ type: "skip", success: false, message: perm.message }),
+			);
+			return true;
+		}
+
 		const player = client.manager.getPlayer(msg.guildId);
 		if (player) {
 			if (player.queue.tracks.length === 0) {
@@ -92,6 +121,14 @@ export const handleSkip: WSHandler = async (ws, msg, client) => {
 
 export const handleStop: WSHandler = async (ws, msg, client) => {
 	if (msg.type === "stop" && msg.guildId) {
+		const perm = await checkVoicePermissions(ws, msg.guildId, client);
+		if (!perm.allowed) {
+			ws.send(
+				JSON.stringify({ type: "stop", success: false, message: perm.message }),
+			);
+			return true;
+		}
+
 		const player = client.manager.getPlayer(msg.guildId);
 		if (player) {
 			await player.destroy();
@@ -112,6 +149,14 @@ export const handleStop: WSHandler = async (ws, msg, client) => {
 
 export const handleSeek: WSHandler = async (ws, msg, client) => {
 	if (msg.type === "seek" && msg.guildId && typeof msg.position === "number") {
+		const perm = await checkVoicePermissions(ws, msg.guildId, client);
+		if (!perm.allowed) {
+			ws.send(
+				JSON.stringify({ type: "seek", success: false, message: perm.message }),
+			);
+			return true;
+		}
+
 		const player = client.manager.getPlayer(msg.guildId);
 		if (player?.queue?.current) {
 			const track = player.queue.current;
@@ -154,6 +199,18 @@ export const handleSeek: WSHandler = async (ws, msg, client) => {
 
 export const handlePrevious: WSHandler = async (ws, msg, client) => {
 	if (msg.type === "previous" && msg.guildId) {
+		const perm = await checkVoicePermissions(ws, msg.guildId, client);
+		if (!perm.allowed) {
+			ws.send(
+				JSON.stringify({
+					type: "previous",
+					success: false,
+					message: perm.message,
+				}),
+			);
+			return true;
+		}
+
 		const player = client.manager.getPlayer(msg.guildId);
 		if (player) {
 			if (player.queue.previous.length === 0) {

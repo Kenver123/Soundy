@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { cwd } from "node:process";
-import { Api } from "@top-gg/sdk";
+import ky from "ky";
 import { createEvent } from "seyfert";
 import { BOT_VERSION, changePresence } from "#soundy/utils";
 
@@ -55,22 +55,30 @@ export default createEvent({
 
 		async function postStats() {
 			try {
-				const api = new Api(client.config.topgg.token);
 				let guildCount = client.cache.guilds?.count();
 				if (typeof guildCount !== "number" || Number.isNaN(guildCount))
 					guildCount = 0;
 				const shardCount = client.gateway.totalShards;
 
-				await api.postStats({
-					serverCount: guildCount,
-					shardCount,
+				const token = client.config.topgg.token.startsWith("Bearer ")
+					? client.config.topgg.token
+					: `Bearer ${client.config.topgg.token}`;
+
+				await ky.patch("https://top.gg/api/v1/projects/@me/metrics", {
+					headers: {
+						Authorization: token,
+					},
+					json: {
+						server_count: guildCount,
+						shard_count: shardCount,
+					},
 				});
 
 				client.logger.info(
-					`[Top.gg] Stats posted | Servers: ${guildCount} | Shards: ${shardCount}`,
+					`[Top.gg] Metrics posted | Servers: ${guildCount} | Shards: ${shardCount}`,
 				);
 			} catch (error) {
-				client.logger.error("[Top.gg] Failed to post stats:", error);
+				client.logger.error("[Top.gg] Failed to post metrics:", error);
 			}
 		}
 	},

@@ -67,7 +67,9 @@ export async function playerListener(
 
 		if (!(player.textChannelId && player.voiceChannelId)) return;
 
-		const channel = await client.channels.fetch(player.voiceChannelId);
+		const channel = await client.channels
+			.fetch(player.voiceChannelId)
+			.catch(() => null);
 		if (!channel?.is(["GuildVoice", "GuildStageVoice"])) return;
 
 		const vcMembers: GuildMember[] = await Promise.all(

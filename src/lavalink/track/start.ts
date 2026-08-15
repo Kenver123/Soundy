@@ -1,6 +1,6 @@
 // src/lavalink/events.ts
 
-import type { User } from "seyfert";
+import { broadcastPlayerUpdate } from "#soundy/api";
 import { LavalinkEventTypes } from "#soundy/types";
 import {
 	createLavalinkEvent,
@@ -57,24 +57,32 @@ export default createLavalinkEvent({
 				player.deleteData("lyricsInterval");
 			}
 
+			let requesterId = client.botId || "bot";
+			if (track.requester) {
+				if (typeof track.requester === "object" && "id" in track.requester) {
+					requesterId = String((track.requester as { id: string }).id);
+				} else if (typeof track.requester === "string") {
+					requesterId = track.requester;
+				}
+			}
+
 			await client.database.updateTrackStats(
 				track.info.uri,
 				track.info.title,
 				track.info.author,
 				player.guildId,
-				(track.requester as User).id,
+				requesterId,
 				track.info.uri,
 				track.info.artworkUrl ?? undefined,
 				track.info.duration,
 				track.info.isStream,
 			);
-			await client.database.updateUserStats(
-				(track.requester as User).id,
-				player.guildId,
-			);
+			await client.database.updateUserStats(requesterId, player.guildId);
 
-			const voice = await client.channels.fetch(player.voiceChannelId);
-			if (!voice.is(["GuildStageVoice", "GuildVoice"])) return;
+			const voice = await client.channels
+				.fetch(player.voiceChannelId)
+				.catch(() => null);
+			if (!voice?.is(["GuildStageVoice", "GuildVoice"])) return;
 
 			// Update voice channel status if possible
 			if (voice.is(["GuildVoice"])) {
@@ -117,6 +125,7 @@ export default createLavalinkEvent({
 						);
 						safeData.messageId = setupData.messageId;
 						await playerSaver.savePlayer(player.guildId, safeData);
+						broadcastPlayerUpdate(player.guildId, player);
 						client.logger.info(
 							`[Music] Saved player for guild ${player.guildId}`,
 						);
@@ -149,6 +158,7 @@ export default createLavalinkEvent({
 			);
 			safeData.messageId = sentMessage.id;
 			await playerSaver.savePlayer(player.guildId, safeData);
+			broadcastPlayerUpdate(player.guildId, player);
 			client.logger.info(`[Music] Saved player for guild ${player.guildId}`);
 		} catch (err) {
 			client.logger.error(

@@ -184,7 +184,7 @@ export default class Soundy extends Client<true> {
 
 		getWatermark();
 		this.commands.onCommand = (file) => {
-			const command = new file();
+			const command = typeof file === "function" ? new file() : file;
 			return command;
 		};
 		this.setServices({

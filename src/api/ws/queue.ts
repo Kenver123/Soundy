@@ -1,4 +1,4 @@
-import { getContext, getRequesterId, type WSHandler } from "./types";
+import { checkVoicePermissions, getContext, type WSHandler } from "./types";
 
 export const handleQueue: WSHandler = async (ws, msg, client) => {
 	if (msg.type === "queue" && msg.guildId) {
@@ -29,6 +29,18 @@ export const handleQueue: WSHandler = async (ws, msg, client) => {
 
 export const handleClear: WSHandler = async (ws, msg, client) => {
 	if (msg.type === "clear" && msg.guildId) {
+		const perm = await checkVoicePermissions(ws, msg.guildId, client);
+		if (!perm.allowed) {
+			ws.send(
+				JSON.stringify({
+					type: "clear",
+					success: false,
+					message: perm.message,
+				}),
+			);
+			return true;
+		}
+
 		const player = client.manager.getPlayer(msg.guildId);
 		if (player) {
 			while (player.queue.tracks.length > 0) {
@@ -57,6 +69,18 @@ export const handleClear: WSHandler = async (ws, msg, client) => {
 
 export const handleRemove: WSHandler = async (ws, msg, client) => {
 	if (msg.type === "remove" && msg.guildId && typeof msg.index === "number") {
+		const perm = await checkVoicePermissions(ws, msg.guildId, client);
+		if (!perm.allowed) {
+			ws.send(
+				JSON.stringify({
+					type: "remove",
+					success: false,
+					message: perm.message,
+				}),
+			);
+			return true;
+		}
+
 		const player = client.manager.getPlayer(msg.guildId);
 		if (player) {
 			const index = msg.index;
@@ -99,132 +123,91 @@ export const handleRemove: WSHandler = async (ws, msg, client) => {
 };
 
 export const handlePlay: WSHandler = async (ws, msg, client) => {
-	// Handle play with guildId and voiceChannelId
-	if (msg.type === "play" && msg.guildId && msg.query && msg.voiceChannelId) {
-		if (typeof msg.voiceChannelId !== "string" || !msg.voiceChannelId.trim()) {
-			ws.send(
-				JSON.stringify({
-					type: "play",
-					success: false,
-					message: "voiceChannelId harus string",
-				}),
-			);
-			return true;
-		}
-		const player =
-			client.manager.getPlayer(msg.guildId) ??
-			client.manager.createPlayer({
-				guildId: msg.guildId,
-				voiceChannelId: msg.voiceChannelId,
-				textChannelId: msg.voiceChannelId,
-				selfDeaf: true,
-				volume: client.config.defaultVolume,
-			});
-		if (!player.connected) {
-			await player.connect();
-		}
-		try {
-			const result = await player.search(String(msg.query), {
-				requester: { id: getRequesterId(msg, ws) },
-			});
-			if (
-				["track", "search"].includes(result.loadType) &&
-				result.tracks.length
-			) {
-				const track = result.tracks[0];
-				if (track) {
-					track.requester = { id: getRequesterId(msg, ws) };
-					await player.queue.add(track);
-					if (!player.playing && !player.paused) await player.play();
-					ws.send(
-						JSON.stringify({
-							type: "play",
-							success: true,
-							track: {
-								title: track.info.title,
-								author: track.info.author,
-								duration: track.info.duration,
-								uri: track.info.uri,
-								artwork: track.info.artworkUrl,
-							},
-						}),
-					);
-				} else {
-					ws.send(
-						JSON.stringify({
-							type: "play",
-							success: false,
-							message: "No track found",
-						}),
-					);
-				}
-			} else if (result.loadType === "playlist") {
-				for (const track of result.tracks) {
-					track.requester = { id: getRequesterId(msg, ws) };
-				}
-				await player.queue.add(result.tracks);
-				if (!player.playing && !player.paused) await player.play();
-				ws.send(
-					JSON.stringify({
-						type: "play",
-						success: true,
-						playlist: {
-							name: result.playlist?.name,
-							tracks: result.tracks.length,
-						},
-					}),
-				);
-			} else {
-				ws.send(
-					JSON.stringify({
-						type: "play",
-						success: false,
-						message: "No results found",
-					}),
-				);
-			}
-		} catch (error) {
-			ws.send(
-				JSON.stringify({
-					type: "play",
-					success: false,
-					message: `Error: ${String(error)}`,
-				}),
-			);
-		}
-		return true;
-	}
-
-	// Handle play without explicit guildId/voiceChannelId (using context)
 	if (msg.type === "play" && msg.query) {
-		const { guildId, voiceChannelId } = getContext(msg, ws);
+		const requesterId = String(
+			ws.data?.userId || msg.userId || "websocket-user",
+		);
+
+		// 1. First priority: Use explicitly specified guildId (from msg or ws session selected guild)
+		const context = getContext(msg, ws);
+		let guildId = msg.guildId || context.guildId;
+		let voiceChannelId = msg.voiceChannelId || context.voiceChannelId;
+
+		// If user is physically in the target guild's voice channel, resolve that channel
+		if (guildId && requesterId !== "websocket-user") {
+			const voiceState = client.cache.voiceStates?.get(
+				requesterId,
+				String(guildId),
+			);
+			if (voiceState?.channelId) {
+				voiceChannelId = voiceState.channelId;
+			}
+		}
+
+		// 2. If no target guild resolved yet, search user's active voice state across all guilds
+		if ((!guildId || !voiceChannelId) && requesterId !== "websocket-user") {
+			const allGuilds = Array.from(client.cache.guilds?.values() ?? []);
+			for (const guild of allGuilds) {
+				const gId = (guild as { id: string }).id;
+				const voiceState = client.cache.voiceStates?.get(requesterId, gId);
+				if (voiceState?.channelId) {
+					guildId = gId;
+					voiceChannelId = voiceState.channelId;
+					break;
+				}
+			}
+		}
+
+		// 3. Fail if still no channel/guild resolved
 		if (!guildId || !voiceChannelId) {
 			ws.send(
 				JSON.stringify({
 					type: "play",
 					success: false,
-					message: "guildId/voiceChannelId not set",
+					message: "User not found in any voice channel.",
 				}),
 			);
 			return true;
 		}
-		const requesterId = ws.store?.userId || msg.userId || "websocket-user";
 
-		if (!ws.store) ws.store = {};
-		ws.store.guildId = guildId;
-		ws.store.voiceChannelId = String(voiceChannelId);
+		const cleanVoiceChannelId = String(voiceChannelId);
+		const cleanGuildId = String(guildId);
+
+		// 4. Update session data cache
+		if (!ws.data) ws.data = {};
+		ws.data.guildId = cleanGuildId;
+		ws.data.voiceChannelId = cleanVoiceChannelId;
+		ws.data.userId = requesterId;
+
+		// Push user-connect update to dashboard so the client knows it moved VCs and updates its status
+		ws.send(
+			JSON.stringify({
+				type: "user-connect",
+				success: true,
+				guildId: cleanGuildId,
+				voiceChannelId: cleanVoiceChannelId,
+				userId: requesterId,
+			}),
+		);
+
 		const player =
-			client.manager.getPlayer(guildId) ??
+			client.manager.getPlayer(cleanGuildId) ??
 			client.manager.createPlayer({
-				guildId: guildId,
-				voiceChannelId: String(voiceChannelId),
-				textChannelId: String(voiceChannelId),
+				guildId: cleanGuildId,
+				voiceChannelId: cleanVoiceChannelId,
+				textChannelId: cleanVoiceChannelId,
 				selfDeaf: true,
 				volume: client.config.defaultVolume,
 			});
-		if (!player.connected) {
+
+		if (player.voiceChannelId !== cleanVoiceChannelId) {
+			player.options.voiceChannelId = cleanVoiceChannelId;
+			player.voiceChannelId = cleanVoiceChannelId;
+			await player.connect();
+		} else if (!player.connected) {
 			await player.connect();
 		}
+
 		try {
 			const result = await player.search(String(msg.query), {
 				requester: { id: requesterId },

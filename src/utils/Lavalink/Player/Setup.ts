@@ -37,8 +37,10 @@ export async function playerSetup(message: Message, client: UsingClient) {
 		return;
 	}
 
-	const voiceChannel = await client.channels.fetch(voiceState.channelId);
-	if (!voiceChannel.is(["GuildVoice", "GuildStageVoice"])) return;
+	const voiceChannel = await client.channels
+		.fetch(voiceState.channelId)
+		.catch(() => null);
+	if (!voiceChannel?.is(["GuildVoice", "GuildStageVoice"])) return;
 
 	if (!message.guildId) return;
 	const me = await client.members.fetch(message.guildId, client.me.id);

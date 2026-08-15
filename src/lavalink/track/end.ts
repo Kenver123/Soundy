@@ -1,5 +1,4 @@
-// filepath: e:/Projects/Soundy v3.3.5/src/lavalink/trackEndEvent.ts
-
+import { broadcastPlayerUpdate } from "#soundy/api";
 import { LavalinkEventTypes } from "#soundy/types";
 import { createLavalinkEvent, PlayerSaver } from "#soundy/utils";
 
@@ -93,5 +92,7 @@ export default createLavalinkEvent({
 		player.deleteData("lyricsRequester");
 
 		await playerSaver.clearLyricsData(player.guildId);
+
+		broadcastPlayerUpdate(player.guildId, player);
 	},
 });

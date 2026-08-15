@@ -1,62 +1,62 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import pino from "pino";
 import { Logger } from "seyfert";
-import {
-	gray,
-	italic,
-	LogLevels,
-	red,
-	rgb24,
-	yellow,
-} from "seyfert/lib/common";
+import { italic, LogLevels, rgb24 } from "seyfert/lib/common";
 import { Configuration } from "#soundy/config";
 
-type ColorFunction = (text: string) => string;
+/**
+ * Pino Logger instance.
+ */
+export const pinoLogger = pino({
+	level: process.env.LOG_LEVEL || "info",
+	transport:
+		process.env.NODE_ENV !== "production"
+			? {
+					target: "pino-pretty",
+					options: {
+						colorize: true,
+						translateTime: "SYS:yyyy-mm-dd HH:MM:ss",
+						ignore: "pid,hostname",
+					},
+				}
+			: undefined,
+});
+
+/**
+ * Redirect Seyfert internal logger events to Pino.
+ */
+Logger.customize((_this, level, args) => {
+	const message = args
+		.map((a) => (typeof a === "object" ? JSON.stringify(a) : String(a)))
+		.join(" ");
+
+	switch (level) {
+		case LogLevels.Debug:
+			pinoLogger.debug(message);
+			break;
+		case LogLevels.Info:
+			pinoLogger.info(message);
+			break;
+		case LogLevels.Warn:
+			pinoLogger.warn(message);
+			break;
+		case LogLevels.Error:
+			pinoLogger.error(message);
+			break;
+		case LogLevels.Fatal:
+			pinoLogger.fatal(message);
+			break;
+	}
+
+	return undefined;
+});
 
 /**
  *
  * Custom color function.
- * @param text The text.
- * @returns
  */
-const customColor: ColorFunction = (text: string) =>
-	rgb24(text, Configuration.color.primary);
-
-/**
- *
- * Add padding to the label.
- * @param label The label.
- * @returns
- */
-function addPadding(label: string): string {
-	const maxLength = 6;
-	const bar = ">>";
-
-	const spacesToAdd = maxLength - label.length;
-	if (spacesToAdd <= 0) return bar;
-
-	const spaces = " ".repeat(spacesToAdd);
-
-	return spaces + bar;
-}
-
-/**
- * Formats memory usage data into a string.
- * @param data The memory usage data.
- * @returns
- */
-function formatMemoryUsage(bytes: number): string {
-	const units = ["B", "KB", "MB", "GB", "TB"];
-	let i = 0;
-	let value = bytes;
-
-	while (value >= 1024 && i < units.length - 1) {
-		value /= 1024;
-		i++;
-	}
-
-	return `[RAM: ${value.toFixed(2)} ${units[i]}]`;
-}
+const customColor = (text: string) => rgb24(text, Configuration.color.primary);
 
 /**
  *
@@ -122,54 +122,6 @@ function getRandomText(): string {
 }
 
 /**
- *
- * Customize the Logger.
- * @param _this The logger itself.
- * @param level The log level.
- * @param args The log arguments.
- * @returns
+ * Standard logger instance export.
  */
-export function SoundyLogger(
-	_this: Logger,
-	level: LogLevels,
-	args: unknown[],
-): unknown[] {
-	const date: Date = new Date();
-	const memory: NodeJS.MemoryUsage = process.memoryUsage();
-
-	const label: string = Logger.prefixes.get(level) ?? "Unknown";
-	const timeFormat: string = `[${date.toLocaleDateString()} : ${date.toLocaleTimeString()}]`;
-
-	const emojis: Record<LogLevels, string> = {
-		[LogLevels.Debug]: "🐛",
-		[LogLevels.Error]: "🚫",
-		[LogLevels.Info]: "ℹ️",
-		[LogLevels.Warn]: "⚠️",
-		[LogLevels.Fatal]: "💀",
-	};
-
-	const colors: Record<LogLevels, ColorFunction> = {
-		[LogLevels.Debug]: gray,
-		[LogLevels.Error]: red,
-		[LogLevels.Info]: customColor,
-		[LogLevels.Warn]: yellow,
-		[LogLevels.Fatal]: red,
-	};
-
-	const text = `${gray(`${timeFormat}`)} ${gray(formatMemoryUsage(memory.rss))} ${gray("[Soundy]")} ${emojis[level]} [${colors[
-		level
-	](label)}] ${addPadding(label)}`;
-
-	return [text, ...args];
-}
-
-Logger.customize(SoundyLogger);
-
-/**
- * The logger instance.
- */
-export const logger = new Logger({
-	name: "[Soundy]",
-	saveOnFile: false,
-	active: true,
-});
+export const logger = pinoLogger;

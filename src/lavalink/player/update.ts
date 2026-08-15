@@ -1,3 +1,4 @@
+import { broadcastPlayerUpdate } from "#soundy/api";
 import { LavalinkEventTypes } from "#soundy/types";
 import { createLavalinkEvent, PlayerSaver } from "#soundy/utils";
 
@@ -31,5 +32,7 @@ export default createLavalinkEvent({
 			);
 			await playerSaver.savePlayer(newPlayer.guildId, safeData);
 		}
+
+		broadcastPlayerUpdate(newPlayer.guildId, newPlayer);
 	},
 });

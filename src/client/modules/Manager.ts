@@ -54,17 +54,34 @@ export class SoundyManager extends LavalinkManager {
 				defaultSearchPlatform: client.config.defaultSearchPlatform,
 				onDisconnect: {
 					autoReconnect: true,
-					// destroyPlayer: true,
 				},
 				onEmptyQueue: {
 					autoPlayFunction,
-					// destroyAfterMs: 60_000, // 1 minute
 				},
 				useUnresolvedData: true,
 			},
 		});
 		this.playerSaver = new PlayerSaver(client.logger);
 		this.lavalinkHandler = new LavalinkHandler(client);
+
+		this.nodeManager.on("disconnect", (node, reason) => {
+			client.logger.warn(
+				`[Lavalink Auto-Failover] Node ${node.options.id} disconnected (${reason?.code ?? "unknown"}). Checking failover options...`,
+			);
+			const availableNode = Array.from(this.nodeManager.nodes.values()).find(
+				(n) => n.id !== node.id && n.connected,
+			);
+			if (availableNode) {
+				client.logger.info(
+					`[Lavalink Auto-Failover] Migrating active players to node ${availableNode.options.id}`,
+				);
+				for (const player of this.players.values()) {
+					if (player.node.id === node.id) {
+						player.changeNode(availableNode.id);
+					}
+				}
+			}
+		});
 	}
 
 	/**
